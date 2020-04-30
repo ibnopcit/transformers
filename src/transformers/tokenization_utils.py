@@ -1339,7 +1339,7 @@ class PreTrainedTokenizer(SpecialTokensMixin):
         Same as doing ``self.convert_tokens_to_ids(self.tokenize(text))``.
 
         Args:
-            text (:obj:`str`, :obj:`List[str]` or :obj:`List[int]`):
+        text (:obj:`str`, :obj:`List[str]` or :obj:`List[int]`):
                 The first sequence to be encoded. This can be a string, a list of strings (tokenized string using
                 the `tokenize` method) or a list of integers (tokenized string ids using the `convert_tokens_to_ids`
                 method)
@@ -2161,7 +2161,7 @@ class PreTrainedTokenizer(SpecialTokensMixin):
             .replace(" 'm", "'m")
             .replace(" do not", " don't")
             .replace(" 's", "'s")
-            .replace(" 've", "'ve")
+                .replace(" 've", "'ve")
             .replace(" 're", "'re")
         )
         return out_string

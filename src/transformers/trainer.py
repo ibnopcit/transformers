@@ -166,7 +166,7 @@ class Trainer:
             collate_fn=self.data_collator.collate_batch,
         )
 
-    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
+def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
         if eval_dataset is None and self.eval_dataset is None:
             raise ValueError("Trainer: evaluation requires an eval_dataset.")
         return DataLoader(
@@ -228,6 +228,16 @@ class Trainer:
 
         optimizer, scheduler = self.get_optimizers(num_training_steps=t_total)
 
+        model = self.model
+
+        # multi-gpu training (should be after apex fp16 initialization)
+        if model_path is None:
+            if self.args.n_gpu > 1 and not isinstance(self.model, torch.nn.DataParallel):
+            # if self.args.n_gpu > 1:
+                model = torch.nn.DataParallel(model)
+
+        model.to(self.args.device)
+
         # Check if saved optimizer or scheduler states exist
         if (
             model_path is not None
@@ -237,17 +247,16 @@ class Trainer:
             # Load in optimizer and scheduler states
             optimizer.load_state_dict(torch.load(os.path.join(model_path, "optimizer.pt")))
             scheduler.load_state_dict(torch.load(os.path.join(model_path, "scheduler.pt")))
+            # multi-gpu training (should be after apex fp16 initialization)
+            if self.args.n_gpu > 1 and not isinstance(self.model, torch.nn.DataParallel):
+            # if self.args.n_gpu > 1:
+                model = torch.nn.DataParallel(model)
 
-        model = self.model
-        model.to(self.args.device)
+
         if self.args.fp16:
             if not is_apex_available():
                 raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
             model, optimizer = amp.initialize(model, optimizer, opt_level=self.args.fp16_opt_level)
-
-        # multi-gpu training (should be after apex fp16 initialization)
-        if self.args.n_gpu > 1:
-            model = torch.nn.DataParallel(model)
 
         # Distributed training (should be after apex fp16 initialization)
         if self.args.local_rank != -1:
@@ -284,9 +293,10 @@ class Trainer:
             try:
                 global_step = int(model_path.split("-")[-1].split("/")[0])
                 epochs_trained = global_step // (len(train_dataloader) // self.args.gradient_accumulation_steps)
-                steps_trained_in_current_epoch = global_step % (
+                global_steps_trained_in_current_epoch = global_step % (
                     len(train_dataloader) // self.args.gradient_accumulation_steps
                 )
+                steps_trained_in_current_epoch = global_steps_trained_in_current_epoch * self.args.gradient_accumulation_steps
 
                 logger.info("  Continuing training from checkpoint, will skip to saved global_step")
                 logger.info("  Continuing training from epoch %d", epochs_trained)
@@ -305,7 +315,7 @@ class Trainer:
         for epoch in train_iterator:
             epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=self.args.local_rank not in [-1, 0])
             for step, inputs in enumerate(epoch_iterator):
-
+                # logger.info("I got {} inputs.".format(inputs['input_ids'].shape))
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
                     steps_trained_in_current_epoch -= 1
@@ -440,7 +450,8 @@ class Trainer:
             if use_mtime:
                 ordering_and_checkpoint_path.append((os.path.getmtime(path), path))
             else:
-                regex_match = re.match(".*{}-([0-9]+)".format(checkpoint_prefix), path)
+                str_path = path.absolute().as_posix()
+                regex_match = re.match(".*{}-([0-9]+)".format(checkpoint_prefix), str_path)
                 if regex_match and regex_match.groups():
                     ordering_and_checkpoint_path.append((int(regex_match.groups()[0]), path))
 
